@@ -2,6 +2,7 @@ const std = @import("std");
 const MidiClient = @import("midi.zig").MidiClient;
 
 pub const LaunchpadClient = struct {
+    alloc: std.mem.Allocator,
     client: *MidiClient,
 
     pub fn open(alloc: std.mem.Allocator, name: []const u8) !LaunchpadClient {
@@ -9,13 +10,15 @@ pub const LaunchpadClient = struct {
         client.* = try MidiClient.open(name);
 
         return .{
+            .alloc = alloc,
             .client = client,
         };
     }
 
-    pub fn close(self: LaunchpadClient) void {
+    pub fn deinit(self: LaunchpadClient) void {
         self.reset() catch std.debug.print("Couldn't reset\n", .{});
         self.client.close();
+        self.alloc.destroy(self.client);
     }
 
     pub const Note = struct {

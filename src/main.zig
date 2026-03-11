@@ -18,24 +18,29 @@ pub fn main(init: std.process.Init) !void {
     };
     posix.sigaction(posix.SIG.INT, &act, null);
 
-    midi.list_rawmidi_ports();
+    const port_opt = try midi.MidiPort.init_with_name(init.gpa, "Launchpad");
+    if (port_opt) |port| {
+        defer port.deinit();
 
-    var client = try lp.LaunchpadClient.open(init.gpa, "hw:4,0,0");
-    defer client.close();
+        var client = try lp.LaunchpadClient.open(init.gpa, port.full_name);
+        defer client.deinit();
 
-    try client.set_color(
-        .{ .x = 0, .y = 0 },
-        .{ .red = 3, .green = 0 },
-        .none,
-    );
+        try client.set_color(
+            .{ .x = 0, .y = 0 },
+            .{ .red = 3, .green = 0 },
+            .none,
+        );
 
-    while (running.load(.acquire)) {
-        if (!client.client.poll()) {
-            continue;
+        while (running.load(.acquire)) {
+            if (!client.client.poll()) {
+                continue;
+            }
+
+            if (try client.read()) |data| {
+                std.debug.print("{any}\n", .{data});
+            }
         }
-
-        if (try client.read()) |data| {
-            std.debug.print("{any}\n", .{data});
-        }
+    } else {
+        return error.NoDevice;
     }
 }

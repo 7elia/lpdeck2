@@ -129,12 +129,34 @@ pub const MidiClient = struct {
 };
 
 pub const MidiPort = struct {
+    alloc: std.mem.Allocator,
     name: []const u8,
     card: u16,
     device: u16,
     sub: u16,
+    full_name: []const u8,
     has_input: bool,
     has_output: bool,
+
+    pub fn init_with_name(alloc: std.mem.Allocator, name: []const u8) !?MidiPort {
+        var ports = try list_all(alloc);
+        defer ports.deinit(alloc);
+
+        for (ports.items) |port| {
+            if (!std.mem.startsWith(u8, port.name, name)) {
+                port.deinit();
+                continue;
+            }
+
+            return port;
+        }
+
+        return null;
+    }
+
+    pub fn deinit(self: MidiPort) void {
+        self.alloc.free(self.full_name);
+    }
 
     pub fn list_all(alloc: std.mem.Allocator) !std.ArrayList(MidiPort) {
         var ports: std.ArrayList(MidiPort) = .empty;
@@ -146,50 +168,42 @@ pub const MidiPort = struct {
         var card: c_int = -1;
         while (c.snd_card_next(&card) == 0 and card >= 0) {
             const card_name: []const u8 = try std.fmt.allocPrint(alloc, "hw:{d}", .{card});
-        }
-    }
-};
+            defer alloc.free(card_name);
 
-pub fn list_rawmidi_ports() void {
-    var info: ?*c.snd_rawmidi_info_t = undefined;
-    _ = c.snd_rawmidi_info_malloc(&info);
-    defer c.snd_rawmidi_info_free(info);
+            var ctl: ?*c.snd_ctl_t = undefined;
+            if (c.snd_ctl_open(&ctl, card_name.ptr, 0) < 0) continue;
+            defer _ = c.snd_ctl_close(ctl);
 
-    std.debug.print("{s:<4} {s:<12} {s}\n", .{ "IO", "Device", "Name" });
+            var device: c_int = -1;
+            while (c.snd_ctl_rawmidi_next_device(ctl, &device) == 0 and device >= 0) {
+                c.snd_rawmidi_info_set_device(info, @intCast(device));
 
-    var card: c_int = -1;
-    while (c.snd_card_next(&card) == 0 and card >= 0) {
-        var card_name: [32]u8 = undefined;
-        const card_name_slice = std.fmt.bufPrintZ(&card_name, "hw:{d}", .{card}) catch continue;
+                c.snd_rawmidi_info_set_stream(info, c.SND_RAWMIDI_STREAM_INPUT);
+                c.snd_rawmidi_info_set_subdevice(info, 0);
+                const has_input = c.snd_ctl_rawmidi_info(ctl, info) == 0;
 
-        var ctl: ?*c.snd_ctl_t = undefined;
-        if (c.snd_ctl_open(&ctl, card_name_slice.ptr, 0) < 0) continue;
-        defer _ = c.snd_ctl_close(ctl);
+                c.snd_rawmidi_info_set_stream(info, c.SND_RAWMIDI_STREAM_OUTPUT);
+                c.snd_rawmidi_info_set_subdevice(info, 0);
+                const has_output = c.snd_ctl_rawmidi_info(ctl, info) == 0;
 
-        var device: c_int = -1;
-        while (c.snd_ctl_rawmidi_next_device(ctl, &device) == 0 and device >= 0) {
-            c.snd_rawmidi_info_set_device(info, @intCast(device));
+                const name = c.snd_rawmidi_info_get_name(info);
+                const subs: c_int = @intCast(c.snd_rawmidi_info_get_subdevices_count(info));
 
-            c.snd_rawmidi_info_set_stream(info, c.SND_RAWMIDI_STREAM_INPUT);
-            c.snd_rawmidi_info_set_subdevice(info, 0);
-            const has_input = c.snd_ctl_rawmidi_info(ctl, info) == 0;
-
-            c.snd_rawmidi_info_set_stream(info, c.SND_RAWMIDI_STREAM_OUTPUT);
-            c.snd_rawmidi_info_set_subdevice(info, 0);
-            const has_output = c.snd_ctl_rawmidi_info(ctl, info) == 0;
-
-            const name = c.snd_rawmidi_info_get_name(info);
-            const subs: c_int = @intCast(c.snd_rawmidi_info_get_subdevices_count(info));
-
-            var sub: c_int = 0;
-            while (sub < subs) : (sub += 1) {
-                var hw: [32]u8 = undefined;
-                const hw_slice = std.fmt.bufPrint(&hw, "hw:{d},{d},{d}", .{ card, device, sub }) catch continue;
-
-                const io: []const u8 = if (has_input and has_output) "IO" else if (has_input) "I " else " O";
-
-                std.debug.print("{s:<4} {s:<12} {s}\n", .{ io, hw_slice, name });
+                for (0..@intCast(subs)) |sub| {
+                    try ports.append(alloc, .{
+                        .alloc = alloc,
+                        .name = std.mem.span(name),
+                        .card = @intCast(card),
+                        .device = @intCast(device),
+                        .sub = @intCast(sub),
+                        .full_name = try std.fmt.allocPrint(alloc, "hw:{d},{d},{d}", .{ card, device, sub }),
+                        .has_input = has_input,
+                        .has_output = has_output,
+                    });
+                }
             }
         }
+
+        return ports;
     }
-}
+};
