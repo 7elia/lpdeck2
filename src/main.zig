@@ -2,6 +2,7 @@ const std = @import("std");
 const posix = std.posix;
 const lp = @import("launchpad.zig");
 const midi = @import("midi.zig");
+const ws = @import("ws.zig");
 
 var running = std.atomic.Value(bool).init(true);
 
@@ -22,7 +23,15 @@ pub fn main() !void {
     };
     posix.sigaction(posix.SIG.INT, &act, null);
 
+    var thread = try std.Thread.spawn(.{}, ws.start_server, .{alloc});
+    defer thread.join();
+
+    try open_device(alloc);
+}
+
+pub fn open_device(alloc: std.mem.Allocator) !void {
     const port_opt = try midi.MidiPort.init_with_name(alloc, "Launchpad");
+
     if (port_opt) |port| {
         defer port.deinit();
 
@@ -44,7 +53,9 @@ pub fn main() !void {
                 std.debug.print("{any}\n", .{data});
             }
         }
-    } else {
-        return error.NoDevice;
+
+        return;
     }
+
+    return error.NoDevice;
 }
