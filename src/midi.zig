@@ -6,14 +6,17 @@ pub const MidiClient = struct {
     out: ?*c.snd_rawmidi_t,
     descriptors: [1]c.struct_pollfd,
 
-    pub fn open(name: []const u8) !MidiClient {
+    pub fn open(alloc: std.mem.Allocator, name: []const u8) !MidiClient {
+        const c_name = try alloc.dupeZ(u8, name);
+        defer alloc.free(c_name);
+
         var in: ?*c.snd_rawmidi_t = null;
         var out: ?*c.snd_rawmidi_t = null;
 
         const err = c.snd_rawmidi_open(
             @ptrCast(&in),
             @ptrCast(&out),
-            @ptrCast(name),
+            c_name,
             c.SND_RAWMIDI_NONBLOCK,
         );
 

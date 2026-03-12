@@ -7,7 +7,7 @@ pub const LaunchpadClient = struct {
 
     pub fn open(alloc: std.mem.Allocator, name: []const u8) !LaunchpadClient {
         const client = try alloc.create(MidiClient);
-        client.* = try MidiClient.open(name);
+        client.* = try MidiClient.open(alloc, name);
 
         return .{
             .alloc = alloc,
