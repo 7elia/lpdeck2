@@ -3,6 +3,7 @@ const posix = std.posix;
 const lp = @import("launchpad.zig");
 const midi = @import("midi.zig");
 const ws = @import("ws.zig");
+const config = @import("config.zig");
 
 var running = std.atomic.Value(bool).init(true);
 
@@ -23,14 +24,10 @@ pub fn main() !void {
     };
     posix.sigaction(posix.SIG.INT, &act, null);
 
-    var thread = try std.Thread.spawn(.{}, ws.start_server, .{alloc});
-    defer thread.join();
+    const device_name = try config.getDeviceName(alloc);
+    defer alloc.free(device_name);
 
-    try open_device(alloc);
-}
-
-pub fn open_device(alloc: std.mem.Allocator) !void {
-    const port_opt = try midi.MidiPort.init_with_name(alloc, "Launchpad");
+    const port_opt = try midi.MidiPort.initWithName(alloc, device_name);
 
     if (port_opt) |port| {
         defer port.deinit();
@@ -38,11 +35,9 @@ pub fn open_device(alloc: std.mem.Allocator) !void {
         var client = try lp.LaunchpadClient.open(alloc, port.full_name);
         defer client.deinit();
 
-        try client.set_color(
-            .{ .x = 0, .y = 0 },
-            .{ .red = 3, .green = 0 },
-            .none,
-        );
+        var server = try ws.Server.init(alloc, client);
+        defer server.deinit();
+        try server.start();
 
         while (running.load(.acquire)) {
             if (!client.client.poll()) {
@@ -50,6 +45,19 @@ pub fn open_device(alloc: std.mem.Allocator) !void {
             }
 
             if (try client.read()) |data| {
+                if (!data.on) {
+                    continue;
+                }
+
+                const c = try config.loadConfig(alloc);
+                for (c.value.actions) |action| {
+                    if (action.x != data.note.x or action.y != data.note.y) {
+                        continue;
+                    }
+
+                    try action.execute(server);
+                }
+
                 std.debug.print("{any}\n", .{data});
             }
         }
@@ -57,5 +65,5 @@ pub fn open_device(alloc: std.mem.Allocator) !void {
         return;
     }
 
-    return error.NoDevice;
+    return error.DeviceNotFound;
 }

@@ -4,12 +4,14 @@ class ReconnectableWebSocket {
     url: string;
     retryInterval: number;
     reconnectLoopId: number;
+    sendDataLoopId: number;
     socket: WebSocket | undefined;
 
     constructor() {
-        this.url = "ws://127.0.0.1:7542";
+        this.url = `ws://127.0.0.1:7543/${TARGET}`;
         this.retryInterval = 5000;
         this.reconnectLoopId = -1;
+        this.sendDataLoopId = -1;
     }
 
     connect() {
@@ -19,12 +21,9 @@ class ReconnectableWebSocket {
         this.socket.onopen = () => {
             console.log("WebSocket connection established.");
 
-            this.socket?.send(JSON.stringify({
-                target: TARGET,
-                type: "target"
-            }));
-
-            this.sendAppData();
+            if (this.sendDataLoopId === -1) {
+                this.sendDataLoopId = setInterval(() => this.sendAppData(), 2000);
+            }
             
             if (this.reconnectLoopId !== -1) {
                 clearInterval(this.reconnectLoopId);
@@ -57,17 +56,13 @@ class ReconnectableWebSocket {
     }
 
     async sendAppData() {
-        if (!this.socket || this.socket?.readyState !== WebSocket.OPEN) {
+        if (!this.socket) {
             console.log("Socket not opened");
             return;
         }
 
         this.socket?.send(JSON.stringify({
-            target: TARGET,
-            type: "sync",
-            data: {
-                foo: "bar"
-            }
+            foo: "bar"
         }));
     }
 }

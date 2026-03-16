@@ -52,11 +52,11 @@ pub const MidiClient = struct {
         self.out = null;
     }
 
-    pub fn can_read(self: MidiClient) bool {
+    pub fn canRead(self: MidiClient) bool {
         return self.in != null;
     }
 
-    pub fn can_write(self: MidiClient) bool {
+    pub fn canWrite(self: MidiClient) bool {
         return self.out != null;
     }
 
@@ -74,7 +74,7 @@ pub const MidiClient = struct {
     };
 
     pub fn read(self: MidiClient) !?Data {
-        if (!self.can_read()) {
+        if (!self.canRead()) {
             return error.ReadNotAvailable;
         }
 
@@ -103,7 +103,7 @@ pub const MidiClient = struct {
     }
 
     pub fn write(self: MidiClient, data: Data) !void {
-        if (!self.can_write()) {
+        if (!self.canWrite()) {
             return error.WriteNotAvailable;
         }
 
@@ -141,8 +141,8 @@ pub const MidiPort = struct {
     has_input: bool,
     has_output: bool,
 
-    pub fn init_with_name(alloc: std.mem.Allocator, name: []const u8) !?MidiPort {
-        var ports = try list_all(alloc);
+    pub fn initWithName(alloc: std.mem.Allocator, name: []const u8) !?MidiPort {
+        var ports = try listAll(alloc);
         defer ports.deinit(alloc);
 
         for (ports.items) |port| {
@@ -161,7 +161,7 @@ pub const MidiPort = struct {
         self.alloc.free(self.full_name);
     }
 
-    pub fn list_all(alloc: std.mem.Allocator) !std.ArrayList(MidiPort) {
+    pub fn listAll(alloc: std.mem.Allocator) !std.ArrayList(MidiPort) {
         var ports: std.ArrayList(MidiPort) = .empty;
 
         var info: ?*c.snd_rawmidi_info_t = undefined;
